@@ -6,11 +6,13 @@ on:
   workflow_dispatch:
 
 env:
-  PROJECT_ID: ${{ vars.GCP_PROJECT }}
-  GKE_CLUSTER: ${{ vars.GKE_CLUSTER }}
-  GKE_ZONE: ${{ vars.GKE_ZONE }}
-  GAR_LOCATION: us-central1
-  IMAGE_NAME: postgres-app
+  GCP_PROJECT: sirisha-test1
+  GKE_CLUSTER: gke-demo-cluster
+  GKE_ZONE: us-central1-a
+  REGION: us-central1
+  REPOSITORY: postgres-gke-demo
+  IMAGE: postgres-app
+  IMAGE_URI: us-central1-docker.pkg.dev/sirisha-test1/postgres-gke-demo/postgres-app:${{ github.sha }}
 
 jobs:
   build-deploy:
@@ -22,7 +24,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Authenticate to Google Cloud using service account key
+      # 2️⃣ Authenticate to Google Cloud
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -32,42 +34,40 @@ jobs:
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: ${{ env.PROJECT_ID }}
+          project_id: ${{ env.GCP_PROJECT }}
           install_components: gke-gcloud-auth-plugin
 
-      # 4️⃣ Configure Docker to use Artifact Registry
+      # 4️⃣ Configure Docker for Artifact Registry
       - name: Configure Docker for Artifact Registry
         run: |
-          gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
       # 5️⃣ Build and push Docker image
       - name: Build and Push Docker image
         run: |
-          IMAGE_URI=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/demo-repo/${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker build -t $IMAGE_URI ./app
-          docker push $IMAGE_URI
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          docker build -t ${{ env.IMAGE_URI }} ./app
+          docker push ${{ env.IMAGE_URI }}
 
       # 6️⃣ Connect to GKE cluster
       - name: Connect to GKE
         run: |
           gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
             --zone ${{ env.GKE_ZONE }} \
-            --project ${{ env.PROJECT_ID }}
+            --project ${{ env.GCP_PROJECT }}
 
-      # 7️⃣ Update Kubernetes manifests with new image
-      - name: Update Deployment with new image
+      # 7️⃣ Update Deployment with new image (if exists)
+      - name: Update Deployment image
         run: |
-          kubectl set image deployment/app-deployment app=${{ env.IMAGE_URI }} --namespace=default || echo "Deployment will be created in next step"
+          kubectl set image deployment/app-deployment app=${{ env.IMAGE_URI }} --namespace=default || echo "Deployment not found, will be created."
 
-      # 8️⃣ Apply Kubernetes manifests (creates or updates)
+      # 8️⃣ Apply Kubernetes manifests
       - name: Apply Kubernetes manifests
         run: |
           kubectl apply -f k8s/postgres-statefulset.yaml
           kubectl apply -f k8s/app-deployment.yaml
           kubectl apply -f k8s/app-service.yaml
 
-      # 9️⃣ Verify deployment rollout
+      # 9️⃣ Verify Deployment rollout
       - name: Verify Deployment
         run: |
           kubectl rollout status deployment/app-deployment --timeout=120s
