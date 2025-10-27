@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: simple-app
-        image: REPLACE_IMAGE
+        image: us-central1-docker.pkg.dev/sirisha-test1/postgres-gke-demo/postgres-app:latest
         ports:
         - containerPort: 8080
         env:
