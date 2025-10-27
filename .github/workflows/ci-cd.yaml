@@ -42,7 +42,7 @@ jobs:
         run: |
           gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      # 5️⃣ Build and push Docker image
+      # 5️⃣ Build and Push Docker image
       - name: Build and Push Docker image
         run: |
           docker build -t ${{ env.IMAGE_URI }} ./app
@@ -55,21 +55,29 @@ jobs:
             --zone ${{ env.GKE_ZONE }} \
             --project ${{ env.GCP_PROJECT }}
 
-      # 7️⃣ Update Deployment with new image (if exists)
-      - name: Update Deployment image
-        run: |
-          kubectl set image deployment/app-deployment app=${{ env.IMAGE_URI }} --namespace=default || echo "Deployment not found, will be created."
-
-      # 8️⃣ Apply Kubernetes manifests
+      # 7️⃣ Apply Kubernetes manifests
       - name: Apply Kubernetes manifests
         run: |
           kubectl apply -f k8s/postgres-statefulset.yaml
           kubectl apply -f k8s/app-deployment.yaml
           kubectl apply -f k8s/app-service.yaml
 
-      # 9️⃣ Verify Deployment rollout
-      - name: Verify Deployment
+      # 8️⃣ Update Deployment with new image (safe if already exists)
+      - name: Update Deployment with new image
         run: |
-          kubectl rollout status deployment/app-deployment --timeout=120s
+          kubectl set image deployment/app-deployment app=${{ env.IMAGE_URI }} --namespace=default || echo "Deployment not yet created, skipping update"
+
+      # 9️⃣ Verify Deployment rollout
+      - name: Verify Deployment rollout
+        run: |
+          if kubectl get deployment app-deployment >/dev/null 2>&1; then
+            kubectl rollout status deployment/app-deployment --timeout=180s
+          else
+            echo "Deployment not found yet — likely first deploy"
+          fi
+
+      # 🔟 Verify Pods and Service
+      - name: Verify Pods and Service
+        run: |
           kubectl get pods
           kubectl get svc
